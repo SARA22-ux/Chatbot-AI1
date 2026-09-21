@@ -49,7 +49,7 @@ try:
 except ImportError:
     pypdf = None
 
-GOOGLE_API_KEY = "AQ.Ab8RN6KnICE9IUKxs-bqE2boMnhlBDdbAdF8KNQXwjxfTTCR-g"
+GOOGLE_API_KEY = "AQ.Ab8RN6KBC7Kt_zOV_viVbdWrGqR6il_yXIsYPugVWo1MIKgKHQ"
 
 client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",

@@ -49,15 +49,19 @@ try:
 except ImportError:
     pypdf = None
 
-# جلب المفتاح السري بشكل آمن من إعدادات Streamlit
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+# جلب المفتاح السري بشكل آمن من إعدادات Streamlit مع إظهار تنبيه إن لم يكن موجوداً
+if "GOOGLE_API_KEY" in st.secrets:
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+else:
+    st.error("⚠️ مفتاح GOOGLE_API_KEY غير موجود في إعدادات secrets الخاصة بـ Streamlit.")
+    GOOGLE_API_KEY = ""
 
 client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
     api_key=GOOGLE_API_KEY,
 )
 
-SELECTED_MODEL = "gemini-3.5-flash-lite"
+SELECTED_MODEL = "gemini-2.5-flash"  # تم التحديث لنموذج مستقر وسريع
 
 def safe_chat_completion(client_obj, model_name, messages, temperature=0.3, max_retries=3):
     for attempt in range(max_retries):
@@ -72,44 +76,58 @@ def safe_chat_completion(client_obj, model_name, messages, temperature=0.3, max_
             error_str = str(e)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                 if attempt < max_retries - 1:
-                    wait_time = 20 * (attempt + 1)
+                    wait_time = 15 * (attempt + 1)
                     st.warning(f"⚠️ تم الوصول للحد الأقصى المؤقت للطلبات. جاري إعادة المحاولة خلال {wait_time} ثانية...")
                     time.sleep(wait_time)
                     continue
             raise e
     raise Exception("فشلت جميع محاولات الاتصال بسبب استنزاف الحصة المسموحة.")
 
-# جلب القيم مباشرة من st.secrets بدلاً من ملف config.json المحلي
-default_source_type = st.secrets.get("default_source_type", "Private API (with Token)")
-default_url = st.secrets.get("api", {}).get("source_url", "http://192.168.30.131:56/swagger/v1/swagger.json")
-default_token = st.secrets.get("api", {}).get("token", "")
+default_source_type = "Private API (with Token)"
+default_url = "http://192.168.30.131:56/swagger/v1/swagger.json"
+default_token = ""
 
-databases_conf = st.secrets.get("databases", {})
-default_db_conn = databases_conf.get(default_source_type, "")
+CONFIG_FILE_PATH = "config.json"
 
 if 'config_loaded' not in st.session_state:
     st.session_state['config_loaded'] = False
-    
-    st.session_state['source_type'] = default_source_type
-    st.session_state['source_url'] = default_url
-    st.session_state['token_input'] = default_token
-    st.session_state['db_conn_string'] = default_db_conn
+    databases_conf = {}
+     
+    loaded_source_type = default_source_type
+    loaded_url = default_url
+    loaded_token = default_token
+
+    if os.path.exists(CONFIG_FILE_PATH):
+        try:
+            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+                loaded_source_type = config_data.get("default_source_type", default_source_type)
+                api_conf = config_data.get("api", {})
+                loaded_url = api_conf.get("source_url", default_url)
+                loaded_token = api_conf.get("token", default_token)
+                databases_conf = config_data.get("databases", {})
+        except Exception as e:
+            st.sidebar.error(f"خطأ في قراءة ملف config.json: {str(e)}")
+     
+    st.session_state['source_type'] = loaded_source_type
+    st.session_state['source_url'] = loaded_url
+    st.session_state['token_input'] = loaded_token
     st.session_state['databases_config'] = databases_conf
     st.session_state['config_loaded'] = True
 
     try:
-        if "Database" not in default_source_type and default_url:
+        if loaded_url:
             headers = {"User-Agent": "Mozilla/5.0"}
-            if default_token:
-                headers["Authorization"] = default_token if default_token.startswith("Bearer ") else f"Bearer {default_token}"
+            if loaded_token:
+                headers["Authorization"] = loaded_token if loaded_token.startswith("Bearer ") else f"Bearer {loaded_token}"
             
-            response = httpx.get(default_url, timeout=20, verify=False, follow_redirects=True, headers=headers)
+            response = httpx.get(loaded_url, timeout=20, verify=False, follow_redirects=True, headers=headers)
             if response.status_code == 200:
                 try:
                     swagger_data = response.json()
                 except Exception:
                     swagger_data = {"paths": {}, "info": {"title": "Raw HTML/Text Response"}}
-                    
+                     
                 endpoints_dict = {}
                 if isinstance(swagger_data, dict):
                     paths = swagger_data.get("paths", {})
@@ -130,28 +148,28 @@ if 'config_loaded' not in st.session_state:
 # --- الشريط الجانبي (Sidebar) للملفات، الصور، والتسجيل الصوتي ---
 with st.sidebar:
     st.markdown("### 📁 مرفقات الملفات والصوتيات والصور")
-    st.write("أو صوت، Screenshot/صورة، ملف (PDF) رفع ملف (TXT, PDF, PNG, JPG, ...):")
-    
+    st.write("رفع ملف (TXT, PDF, PNG, JPG, ...):")
+     
     uploaded_file = st.file_uploader(
         "رفع ملف (PDF، نصي، CSV...):", 
         type=["txt", "pdf", "csv", "json", "log"], 
         key="sidebar_file_uploader"
     )
-    
+     
     chat_image_file = st.file_uploader(
         "إرفاق صورة أو لقطة شاشة (Screenshot):", 
         type=["png", "jpg", "jpeg", "webp"], 
         key="sidebar_image_uploader"
     )
-    
+     
     st.markdown("---")
     st.markdown("### 🎙️ التسجيل الصوتي")
     audio_data = mic_recorder(start_prompt="🎙️ بدء التسجيل", stop_prompt="⏹️ إيقاف التسجيل", key='mic')
-    
+     
     st.markdown("---")
     selected_model_dropdown = st.selectbox(
         "اختر نموذج الذكاء الاصطناعي",
-        ["Flash-Lite", "Flash 1.5", "Pro"]
+        ["Flash 2.5", "Flash 1.5", "Pro"]
     )
 
 st.title("🤖 ai chat - المساعد الذكي الشامل")
@@ -170,11 +188,6 @@ for message in st.session_state.messages:
 user_prompt = None
 document_content = ""
 image_to_process = None
-
-# شريط الإدخال السفلي للشات فقط
-st.markdown('<div class="fixed-bottom-container">', unsafe_allow_html=True)
-chat_input_text = st.chat_input("اكتب سؤالك أو استفسارك هنا...")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # التحقق من الملفات المرفوعة من الـ Sidebar
 if chat_image_file is not None:
@@ -196,7 +209,7 @@ if uploaded_file is not None:
         st.error(f"خطأ في معالجة الملف: {str(ex)}")
 
 # معالجة الصورة أو الـ Screenshot المرفقة من الـ Sidebar
-if image_to_process is not None:
+if image_to_process is not None and not any(m.get("image_bytes") == image_to_process for m in st.session_state.messages if "image_bytes" in m):
     try:
         base64_image = base64.b64encode(image_to_process).decode('utf-8')
         vision_response = client.chat.completions.create(
@@ -217,14 +230,15 @@ if image_to_process is not None:
     except Exception as img_err:
         st.error(f"خطأ في تحليل الصورة: {str(img_err)}")
 
-if chat_input_text:
-    user_prompt = chat_input_text
-
 # معالجة التسجيل الصوتي من الـ Sidebar
-if audio_data:
+if audio_data and 'processed_audio_bytes' not in st.session_state:
+    st.session_state['processed_audio_bytes'] = None
+
+if audio_data and audio_data.get('bytes') and audio_data['bytes'] != st.session_state.get('processed_audio_bytes'):
     try:
         with st.spinner("🎙️ جاري تفريغ الصوت عبر Whisper..."):
             audio_bytes = audio_data['bytes']
+            st.session_state['processed_audio_bytes'] = audio_bytes
             audio_file_obj = ("voice_input.wav", audio_bytes, "audio/wav")
             transcript_response = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -235,6 +249,14 @@ if audio_data:
     except Exception as mic_err:
         st.error(f"خطأ في معالجة التسجيل الصوتي: {str(mic_err)}")
 
+# شريط الإدخال السفلي للشات
+st.markdown('<div class="fixed-bottom-container">', unsafe_allow_html=True)
+chat_input_text = st.chat_input("اكتب سؤالك أو استفسارك هنا...")
+st.markdown('</div>', unsafe_allow_html=True)
+
+if chat_input_text:
+    user_prompt = chat_input_text
+
 if uploaded_file and not user_prompt and not image_to_process:
     user_prompt = "قم بتحليل هذا المستند المرفق، ولخص محتواه، واستخرج كافة المعلومات المفيدة منه."
 
@@ -242,15 +264,14 @@ if user_prompt:
     message_entry = {"role": "user", "content": user_prompt}
     if image_to_process:
         message_entry["image_bytes"] = image_to_process
-    
+     
     st.session_state.messages.append(message_entry)
     with st.chat_message("user"):
         if image_to_process:
             st.image(image_to_process, caption="الصورة المرفقة", use_container_width=True)
         st.markdown(user_prompt)
 
-    source_type = st.session_state.get('source_type', '')
-    has_swagger = 'endpoints_dict' in st.session_state and "Database" not in source_type
+    has_swagger = 'endpoints_dict' in st.session_state
 
     endpoints_summary_list = []
     if has_swagger:
@@ -287,13 +308,13 @@ if user_prompt:
                     [{"role": "user", "content": planning_prompt}],
                     temperature=0.1
                 )
-                
+                 
                 plan_json_text = plan_response.choices[0].message.content.strip()
                 if "```json" in plan_json_text:
                     plan_json_text = plan_json_text.split("```json")[1].split("```")[0].strip()
                 elif "```" in plan_json_text:
                     plan_json_text = plan_json_text.split("```")[1].split("```")[0].strip()
-                    
+                     
                 plan_data = json.loads(plan_json_text)
                 execution_result_text = None
 
@@ -312,10 +333,10 @@ if user_prompt:
                         full_url_1 = base_server_url + base_path + path_1
                     else:
                         full_url_1 = path_1
-                        
+                         
                     req_method = plan_data.get("method_1", "GET").upper()
                     request_body = plan_data.get("body", {})
-                    
+                     
                     try:
                         if req_method == "POST":
                             resp = httpx.post(full_url_1, headers=req_headers, json=request_body, timeout=15, verify=False)
@@ -335,7 +356,7 @@ if user_prompt:
 
                 safe_result = execution_result_text[:4000] if execution_result_text else "لم يتم جلب بيانات."
                 res_section = f"البيانات الفعلية المسترجعة من الـ API:\n{safe_result}" if execution_result_text else ""
-                
+                 
                 final_prompt = f"""
 أنت مساعد ذكي ومحترف لتحليل البيانات وعرض الإجابات للمستخدمين.
 سؤال أو طلب المستخدم: "{user_prompt}"
@@ -354,7 +375,7 @@ if user_prompt:
                     [{"role": "user", "content": final_prompt}],
                     temperature=0.3
                 )
-                
+                 
                 final_answer = final_response.choices[0].message.content.strip()
                 st.markdown(final_answer)
                 st.session_state.messages.append({"role": "assistant", "content": final_answer})

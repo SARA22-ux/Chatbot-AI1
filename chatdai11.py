@@ -49,12 +49,11 @@ try:
 except ImportError:
     pypdf = None
 
-# جلب المفتاح السري بشكل آمن من إعدادات Streamlit
+# جلب المفتاح السري بشكل آمن من إعدادات Streamlit أو وضعه كقيمة احتياطية
 if "GOOGLE_API_KEY" in st.secrets:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    st.error("⚠️ مفتاح GOOGLE_API_KEY غير موجود في إعدادات secrets الخاصة بـ Streamlit.")
-    GOOGLE_API_KEY = ""
+    GOOGLE_API_KEY = "AQ.Ab8RN6JerUF5uzhUoYtWcX1dtYDGhQe6Akm32f8bfW5rkOlLVg"
 
 client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -113,7 +112,7 @@ if 'config_loaded' not in st.session_state:
     st.session_state['databases_config'] = databases_conf
     st.session_state['config_loaded'] = True
 
-# --- الشريط الجانبي (Sidebar) لإعدادات الـ API (Public / Private) ---
+# --- الشريط الجانبي (Sidebar) لإعدادات الـ API ---
 with st.sidebar:
     st.markdown("### ⚙️ إعدادات مصدر البيانات (API)")
      
@@ -146,7 +145,7 @@ with st.sidebar:
             if "Private" in api_mode and token_input:
                 headers["Authorization"] = token_input if token_input.startswith("Bearer ") else f"Bearer {token_input}"
              
-            response = httpx.get(source_url_input, timeout=10, verify=False, follow_redirects=True, headers=headers)
+            response = httpx.get(source_url_input, timeout=15, verify=False, follow_redirects=True, headers=headers)
             if response.status_code == 200:
                 swagger_data = response.json()
                 endpoints_dict = {}
@@ -188,7 +187,7 @@ with st.sidebar:
     audio_data = mic_recorder(start_prompt="🎙️ بدء التسجيل", stop_prompt="⏹️ إيقاف التسجيل", key='mic')
 
 st.title("🤖 ai chat - المساعد الذكي الشامل")
-st.write("اسأل عن بيانات النظام (سواء عامة أو محمية بتوكن) أو ارفع الملفات من القائمة الجانبية!")
+st.write("اسأل عن بيانات النظام أو ارفع الملفات من القائمة الجانبية!")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -321,76 +320,4 @@ if user_prompt:
                 if "```json" in plan_json_text:
                     plan_json_text = plan_json_text.split("```json")[1].split("```")[0].strip()
                 elif "```" in plan_json_text:
-                    plan_json_text = plan_json_text.split("```")[1].split("```")[0].strip()
-                     
-                plan_data = json.loads(plan_json_text)
-                execution_result_text = None
-
-                if has_swagger and plan_data.get("needs_api"):
-                    req_headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-                    active_token = st.session_state.get('token_input', '')
-                    if active_token:
-                        req_headers["Authorization"] = active_token if active_token.startswith("Bearer ") else f"Bearer {active_token}"
-
-                    path_1 = plan_data.get("path_1") or st.session_state.get('source_url', '')
-                    if not path_1.startswith("http"):
-                        parsed_url = urlparse(st.session_state.get('source_url', ''))
-                        base_server_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-                        raw_data = st.session_state.get('swagger_raw', {})
-                        base_path = raw_data.get('basePath', '') if isinstance(raw_data, dict) else ''
-                        full_url_1 = base_server_url + base_path + path_1
-                    else:
-                        full_url_1 = path_1
-                         
-                    req_method = plan_data.get("method_1", "GET").upper()
-                    request_body = plan_data.get("body", {})
-                     
-                    try:
-                        if req_method == "POST":
-                            resp = httpx.post(full_url_1, headers=req_headers, json=request_body, timeout=15, verify=False)
-                        else:
-                            resp = httpx.get(full_url_1, headers=req_headers, timeout=15, verify=False)
-                    except Exception as req_err:
-                        resp = None
-                        st.error(f"خطأ في الاتصال بالـ API: {str(req_err)}")
-
-                    if resp is not None:
-                        if resp.status_code == 200:
-                            execution_result_text = resp.text.strip()
-                        else:
-                            execution_result_text = f"فشل الاستعلام وحالة الـ Response هي: {resp.status_code} - تفاصيل الخطأ: {resp.text}"
-                    else:
-                        execution_result_text = "تعذر الاتصال بالخادم."
-
-                safe_result = execution_result_text[:4000] if execution_result_text else "لم يتم جلب بيانات."
-                res_section = f"البيانات الفعلية المسترجعة من الـ API:\n{safe_result}" if execution_result_text else ""
-                 
-                final_prompt = f"""
-أنت مساعد بيانات تقني دقيق ومحترف. 
-⚠️ تحذير صارم: ممنوع منعاً باتاً استخدام أي أقواس مربعة [], أو عبارات وهمية، أو أمثلة افتراضية (مثل "سيتم وضع العدد هنا").
-
-سؤال أو طلب المستخدم: "{user_prompt}"
-{doc_text_section}
-{res_section}
-
-تعليمات التنفيذ:
-1. اقرأ "البيانات الفعلية المسترجعة من الـ API" أعلاه بعناية فائقة.
-2. استخرج القيم، الأرقام، والنصوص الحقيقية الموجودة فيها فقط وعرضها بشكل مباشر ومنظم (في جداول أو نقاط واضحة).
-3. إذا كانت البيانات عبارة عن كود JSON أو أرقام مسترجعة من قاعدة البيانات، اعرض الأرقام الحقيقية تماماً كما وردت دون أي اختلاق أو وضع عبارات استدلالية.
-"""
-
-                final_response = safe_chat_completion(
-                    client,
-                    SELECTED_MODEL,
-                    [{"role": "user", "content": final_prompt}],
-                    temperature=0.3
-                )
-                 
-                final_answer = final_response.choices[0].message.content.strip()
-                st.markdown(final_answer)
-                st.session_state.messages.append({"role": "assistant", "content": final_answer})
-
-            except Exception as e:
-                error_msg = f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
-                st.markdown(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                    plan_json_text = plan_json_text.split("

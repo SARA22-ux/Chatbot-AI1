@@ -9,7 +9,7 @@ import time
 from urllib.parse import urlparse
 from streamlit_mic_recorder import mic_recorder
 
-# إعداد الصفحة وتغيير الاسم إلى ai chat وتفعيل الاتجاه المناسب للنصوص
+# إعداد الصفحة وتغيير الاسم إلى ai chat وتفعيل اتجاه الـ RTL للنصوص العربية
 st.set_page_config(page_title="ai chat", layout="wide")
 
 st.markdown(
@@ -49,11 +49,7 @@ try:
 except ImportError:
     pypdf = None
 
-# جلب المفتاح السري بشكل آمن من إعدادات Streamlit أو وضعه كقيمة احتياطية
-if "GOOGLE_API_KEY" in st.secrets:
-    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-else:
-    GOOGLE_API_KEY = "AQ.Ab8RN6JerUF5uzhUoYtWcX1dtYDGhQe6Akm32f8bfW5rkOlLVg"
+GOOGLE_API_KEY = "AQ.Ab8RN6JerUF5uzhUoYtWcX1dtYDGhQe6Akm32f8bfW5rkOlLVg"
 
 client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -75,79 +71,63 @@ def safe_chat_completion(client_obj, model_name, messages, temperature=0.3, max_
             error_str = str(e)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                 if attempt < max_retries - 1:
-                    wait_time = 15 * (attempt + 1)
+                    wait_time = 20 * (attempt + 1)
                     st.warning(f"⚠️ تم الوصول للحد الأقصى المؤقت للطلبات. جاري إعادة المحاولة خلال {wait_time} ثانية...")
                     time.sleep(wait_time)
                     continue
             raise e
     raise Exception("فشلت جميع محاولات الاتصال بسبب استنزاف الحصة المسموحة.")
 
+default_source_type = "Private API (with Token)"
+default_url = "http://192.168.30.131:56/swagger/v1/swagger.json"
+default_token = ""
+default_db_conn = "Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=192.168.30.133)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SID=etech19c)));User Id=zagelabnewtest;Password=zagelabnewtest;"
+
 CONFIG_FILE_PATH = "config.json"
 
 if 'config_loaded' not in st.session_state:
     st.session_state['config_loaded'] = False
     databases_conf = {}
-     
-    # القيم الافتراضية للعمل المحلي المباشر
-    loaded_source_type = "Private API (with Token)"
-    loaded_url = "http://192.168.30.131:56/swagger/v1/swagger.json"
-    loaded_token = ""
+    
+    loaded_source_type = default_source_type
+    loaded_url = default_url
+    loaded_token = default_token
+    loaded_db_conn = default_db_conn
 
-    # قراءة الإعدادات تلقائياً من ملف config.json إن وجد
     if os.path.exists(CONFIG_FILE_PATH):
         try:
             with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
-                loaded_source_type = config_data.get("default_source_type", loaded_source_type)
+                loaded_source_type = config_data.get("default_source_type", default_source_type)
                 api_conf = config_data.get("api", {})
-                loaded_url = api_conf.get("source_url", loaded_url)
-                loaded_token = api_conf.get("token", loaded_token)
+                loaded_url = api_conf.get("source_url", default_url)
+                loaded_token = api_conf.get("token", default_token)
                 databases_conf = config_data.get("databases", {})
+                if loaded_source_type in databases_conf:
+                    loaded_db_conn = databases_conf[loaded_source_type]
         except Exception as e:
             st.sidebar.error(f"خطأ في قراءة ملف config.json: {str(e)}")
-     
+    
     st.session_state['source_type'] = loaded_source_type
     st.session_state['source_url'] = loaded_url
     st.session_state['token_input'] = loaded_token
+    st.session_state['db_conn_string'] = loaded_db_conn
     st.session_state['databases_config'] = databases_conf
     st.session_state['config_loaded'] = True
 
-# --- الشريط الجانبي (Sidebar) لإعدادات الـ API ---
-with st.sidebar:
-    st.markdown("### ⚙️ إعدادات مصدر البيانات (API)")
-     
-    api_mode = st.radio(
-        "نوع الـ API:",
-        ["Public API (بدون توكن)", "Private API (مع توكن / مصادقة)"],
-        index=0 if "Public" in st.session_state.get('source_type', '') else 1
-    )
-     
-    source_url_input = st.text_input(
-        "رابط الـ Swagger JSON أو نقطة النهاية:",
-        value=st.session_state.get('source_url', 'http://192.168.30.131:56/swagger/v1/swagger.json')
-    )
-    st.session_state['source_url'] = source_url_input
-
-    token_input = ""
-    if "Private" in api_mode:
-        token_input = st.text_input(
-            "أدخل رمز المصادقة (Token / Bearer):",
-            value=st.session_state.get('token_input', ''),
-            type="password"
-        )
-        st.session_state['token_input'] = token_input
-    else:
-        st.session_state['token_input'] = ""
-
-    if st.button("🔄 تحديث وتحميل مسارات الـ API"):
-        try:
+    try:
+        if "Database" not in loaded_source_type and loaded_url:
             headers = {"User-Agent": "Mozilla/5.0"}
-            if "Private" in api_mode and token_input:
-                headers["Authorization"] = token_input if token_input.startswith("Bearer ") else f"Bearer {token_input}"
-             
-            response = httpx.get(source_url_input, timeout=15, verify=False, follow_redirects=True, headers=headers)
+            if loaded_token:
+                headers["Authorization"] = loaded_token if loaded_token.startswith("Bearer ") else f"Bearer {loaded_token}"
+            
+            response = httpx.get(loaded_url, timeout=20, verify=False, follow_redirects=True, headers=headers)
             if response.status_code == 200:
-                swagger_data = response.json()
+                try:
+                    swagger_data = response.json()
+                except Exception:
+                    swagger_data = {"paths": {}, "info": {"title": "Raw HTML/Text Response"}}
+                    
                 endpoints_dict = {}
                 if isinstance(swagger_data, dict):
                     paths = swagger_data.get("paths", {})
@@ -162,29 +142,35 @@ with st.sidebar:
                             }
                 st.session_state['swagger_raw'] = swagger_data
                 st.session_state['endpoints_dict'] = endpoints_dict
-                st.success(f"✅ تم تحميل {len(endpoints_dict)} مسار بنجاح!")
-            else:
-                st.error(f"فشل التحميل، رمز الاستجابة: {response.status_code}")
-        except Exception as e:
-            st.error(f"خطأ في الاتصال (تأكد من تشغيل السيرفر المحلي): {str(e)}")
+    except Exception:
+        pass
 
-    st.markdown("---")
+# --- الشريط الجانبي (Sidebar) للملفات، الصور، والتسجيل الصوتي ---
+with st.sidebar:
     st.markdown("### 📁 مرفقات الملفات والصوتيات والصور")
+    st.write("أو صوت، Screenshot/صورة، ملف (PDF) رفع ملف (TXT, PDF, PNG, JPG, ...):")
+    
     uploaded_file = st.file_uploader(
         "رفع ملف (PDF، نصي، CSV...):", 
         type=["txt", "pdf", "csv", "json", "log"], 
         key="sidebar_file_uploader"
     )
-     
+    
     chat_image_file = st.file_uploader(
         "إرفاق صورة أو لقطة شاشة (Screenshot):", 
         type=["png", "jpg", "jpeg", "webp"], 
         key="sidebar_image_uploader"
     )
-     
+    
     st.markdown("---")
     st.markdown("### 🎙️ التسجيل الصوتي")
     audio_data = mic_recorder(start_prompt="🎙️ بدء التسجيل", stop_prompt="⏹️ إيقاف التسجيل", key='mic')
+    
+    st.markdown("---")
+    selected_model_dropdown = st.selectbox(
+        "اختر نموذج الذكاء الاصطناعي",
+        ["Flash-Lite", "Flash 1.5", "Pro"]
+    )
 
 st.title("🤖 ai chat - المساعد الذكي الشامل")
 st.write("اسأل عن بيانات النظام أو ارفع الملفات من القائمة الجانبية!")
@@ -192,6 +178,7 @@ st.write("اسأل عن بيانات النظام أو ارفع الملفات �
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# عرض المحادثات السابقة
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message.get("image_bytes"):
@@ -202,6 +189,12 @@ user_prompt = None
 document_content = ""
 image_to_process = None
 
+# شريط الإدخال السفلي للشات فقط
+st.markdown('<div class="fixed-bottom-container">', unsafe_allow_html=True)
+chat_input_text = st.chat_input("اكتب سؤالك أو استفسارك هنا...")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# التحقق من الملفات المرفوعة من الـ Sidebar
 if chat_image_file is not None:
     image_to_process = chat_image_file.getvalue()
 
@@ -220,7 +213,8 @@ if uploaded_file is not None:
     except Exception as ex:
         st.error(f"خطأ في معالجة الملف: {str(ex)}")
 
-if image_to_process is not None and not any(m.get("image_bytes") == image_to_process for m in st.session_state.messages if "image_bytes" in m):
+# معالجة الصورة أو الـ Screenshot المرفقة من الـ Sidebar
+if image_to_process is not None:
     try:
         base64_image = base64.b64encode(image_to_process).decode('utf-8')
         vision_response = client.chat.completions.create(
@@ -241,29 +235,23 @@ if image_to_process is not None and not any(m.get("image_bytes") == image_to_pro
     except Exception as img_err:
         st.error(f"خطأ في تحليل الصورة: {str(img_err)}")
 
-if audio_data and 'processed_audio_bytes' not in st.session_state:
-    st.session_state['processed_audio_bytes'] = None
+if chat_input_text:
+    user_prompt = chat_input_text
 
-if audio_data and audio_data.get('bytes') and audio_data['bytes'] != st.session_state.get('processed_audio_bytes'):
+# معالجة التسجيل الصوتي من الـ Sidebar
+if audio_data:
     try:
         with st.spinner("🎙️ جاري تفريغ الصوت عبر Whisper..."):
             audio_bytes = audio_data['bytes']
-            st.session_state['processed_audio_bytes'] = audio_bytes
             audio_file_obj = ("voice_input.wav", audio_bytes, "audio/wav")
             transcript_response = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file_obj
             )
             user_prompt = transcript_response.text
+            st.success(f"✅ النص المنطوق: {user_prompt}")
     except Exception as mic_err:
         st.error(f"خطأ في معالجة التسجيل الصوتي: {str(mic_err)}")
-
-st.markdown('<div class="fixed-bottom-container">', unsafe_allow_html=True)
-chat_input_text = st.chat_input("اكتب سؤالك أو استفسارك هنا...")
-st.markdown('</div>', unsafe_allow_html=True)
-
-if chat_input_text:
-    user_prompt = chat_input_text
 
 if uploaded_file and not user_prompt and not image_to_process:
     user_prompt = "قم بتحليل هذا المستند المرفق، ولخص محتواه، واستخرج كافة المعلومات المفيدة منه."
@@ -272,14 +260,16 @@ if user_prompt:
     message_entry = {"role": "user", "content": user_prompt}
     if image_to_process:
         message_entry["image_bytes"] = image_to_process
-     
+    
     st.session_state.messages.append(message_entry)
     with st.chat_message("user"):
         if image_to_process:
             st.image(image_to_process, caption="الصورة المرفقة", use_container_width=True)
         st.markdown(user_prompt)
 
-    has_swagger = 'endpoints_dict' in st.session_state
+    source_type = st.session_state.get('source_type', '')
+    has_swagger = 'endpoints_dict' in st.session_state and "Database" not in source_type
+
     endpoints_summary_list = []
     if has_swagger:
         for path, details in st.session_state['endpoints_dict'].items():
@@ -298,12 +288,12 @@ if user_prompt:
 {doc_text_section}
 
 مهمتك:
-1. قم بتحليل سؤال المستخدم بدقة واختر المسار (Path) الأكثر ملاءمة من القائمة أعلاه.
+1. قم بتحليل سؤال المستخدم بدقة واختر المسار (Path) الأكثر ملاءمة من القائمة أعلاه (سواء كان Public أو Private API).
 2. حدد طريقة الطلب الصحيحة تماماً (GET أو POST) وضعها في الحقل `method_1`.
-3. إذا كان الطلب POST ويحتاج لبيانات مرسلة في الـ Body، ضعها في الحقل `body` (وإن لم يحتاج اجعله كائناً فارغاً {{}}).
+3. إذا كان الطلب POST ويحتاج لبيانات مرسلة في الـ Body بناءً على السؤال، ضعها في الحقل `body` (وإن لم يحتاج اجعله كائناً فارغاً {{}}).
 4. ضع قيمة `needs_api` بـ `true` طالما وجد مسار مناسب لخدمة طلب المستخدم.
 أجب بصيغة JSON حصراً بهذا الشكل ودون أي نصوص إضافية:
-{{"needs_api": true, "path_1": "/api/PathFoundInSwagger", "method_1": "GET", "body": {{}}}}
+{{"needs_api": true, "path_1": "/api/PathFoundInSwagger", "method_1": "POST", "body": {{}}}}
 """
 
     with st.chat_message("assistant"):
@@ -315,9 +305,79 @@ if user_prompt:
                     [{"role": "user", "content": planning_prompt}],
                     temperature=0.1
                 )
-                 
+                
                 plan_json_text = plan_response.choices[0].message.content.strip()
                 if "```json" in plan_json_text:
                     plan_json_text = plan_json_text.split("```json")[1].split("```")[0].strip()
                 elif "```" in plan_json_text:
-                    plan_json_text = plan_json_text.split("
+                    plan_json_text = plan_json_text.split("```")[1].split("```")[0].strip()
+                    
+                plan_data = json.loads(plan_json_text)
+                execution_result_text = None
+
+                if has_swagger and plan_data.get("needs_api"):
+                    req_headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+                    active_token = st.session_state.get('token_input', '')
+                    if active_token:
+                        req_headers["Authorization"] = active_token if active_token.startswith("Bearer ") else f"Bearer {active_token}"
+
+                    path_1 = plan_data.get("path_1") or st.session_state.get('source_url', '')
+                    if not path_1.startswith("http"):
+                        parsed_url = urlparse(st.session_state.get('source_url', ''))
+                        base_server_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                        raw_data = st.session_state.get('swagger_raw', {})
+                        base_path = raw_data.get('basePath', '') if isinstance(raw_data, dict) else ''
+                        full_url_1 = base_server_url + base_path + path_1
+                    else:
+                        full_url_1 = path_1
+                        
+                    req_method = plan_data.get("method_1", "GET").upper()
+                    request_body = plan_data.get("body", {})
+                    
+                    try:
+                        if req_method == "POST":
+                            resp = httpx.post(full_url_1, headers=req_headers, json=request_body, timeout=15, verify=False)
+                        else:
+                            resp = httpx.get(full_url_1, headers=req_headers, timeout=15, verify=False)
+                    except Exception as req_err:
+                        resp = None
+                        st.error(f"خطأ في الاتصال بالـ API: {str(req_err)}")
+
+                    if resp is not None:
+                        if resp.status_code == 200:
+                            execution_result_text = resp.text.strip()
+                        else:
+                            execution_result_text = f"فشل الاستعلام وحالة الـ Response هي: {resp.status_code} - تفاصيل الخطأ: {resp.text}"
+                    else:
+                        execution_result_text = "تعذر الاتصال بالخادم."
+
+                safe_result = execution_result_text[:4000] if execution_result_text else "لم يتم جلب بيانات."
+                res_section = f"البيانات الفعلية المسترجعة من الـ API:\n{safe_result}" if execution_result_text else ""
+                
+                final_prompt = f"""
+أنت مساعد ذكي ومحترف لتحليل البيانات وعرض الإجابات للمستخدمين.
+سؤال أو طلب المستخدم: "{user_prompt}"
+{doc_text_section}
+{res_section}
+
+مهمتك هي تقديم إجابة شاملة ومنظمة باللغة العربية:
+1. قم بتحليل النتائج أو البيانات المسترجعة من الـ API بدقة وربطها بسؤال المستخدم.
+2. اعرض البيانات بشكل منسق وواحداً تلو الآخر (جداول أو نقاط واضحة).
+3. قدم خلاصة أو إجابة شافية ومباشرة تلبي طلب المستخدم تماماً.
+"""
+
+                final_response = safe_chat_completion(
+                    client,
+                    SELECTED_MODEL,
+                    [{"role": "user", "content": final_prompt}],
+                    temperature=0.3
+                )
+                
+                final_answer = final_response.choices[0].message.content.strip()
+                st.markdown(final_answer)
+                st.session_state.messages.append({"role": "assistant", "content": final_answer})
+
+            except Exception as e:
+                error_msg = f"❌ حدث خطأ أثناء المعالجة: {str(e)}"
+                st.markdown(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})

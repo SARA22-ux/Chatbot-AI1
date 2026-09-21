@@ -79,50 +79,31 @@ def safe_chat_completion(client_obj, model_name, messages, temperature=0.3, max_
             raise e
     raise Exception("فشلت جميع محاولات الاتصال بسبب استنزاف الحصة المسموحة.")
 
-default_source_type = "Private API (with Token)"
-default_url = "http://192.168.30.131:56/swagger/v1/swagger.json"
-default_token = ""
-default_db_conn = "Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=192.168.30.133)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SID=etech19c)));User Id=zagelabnewtest;Password=zagelabnewtest;"
+# جلب القيم مباشرة من st.secrets بدلاً من ملف config.json المحلي
+default_source_type = st.secrets.get("default_source_type", "Private API (with Token)")
+default_url = st.secrets.get("api", {}).get("source_url", "http://192.168.30.131:56/swagger/v1/swagger.json")
+default_token = st.secrets.get("api", {}).get("token", "")
 
-CONFIG_FILE_PATH = "config.json"
+databases_conf = st.secrets.get("databases", {})
+default_db_conn = databases_conf.get(default_source_type, "")
 
 if 'config_loaded' not in st.session_state:
     st.session_state['config_loaded'] = False
-    databases_conf = {}
     
-    loaded_source_type = default_source_type
-    loaded_url = default_url
-    loaded_token = default_token
-    loaded_db_conn = default_db_conn
-
-    if os.path.exists(CONFIG_FILE_PATH):
-        try:
-            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
-                config_data = json.load(f)
-                loaded_source_type = config_data.get("default_source_type", default_source_type)
-                api_conf = config_data.get("api", {})
-                loaded_url = api_conf.get("source_url", default_url)
-                loaded_token = api_conf.get("token", default_token)
-                databases_conf = config_data.get("databases", {})
-                if loaded_source_type in databases_conf:
-                    loaded_db_conn = databases_conf[loaded_source_type]
-        except Exception as e:
-            st.sidebar.error(f"خطأ في قراءة ملف config.json: {str(e)}")
-    
-    st.session_state['source_type'] = loaded_source_type
-    st.session_state['source_url'] = loaded_url
-    st.session_state['token_input'] = loaded_token
-    st.session_state['db_conn_string'] = loaded_db_conn
+    st.session_state['source_type'] = default_source_type
+    st.session_state['source_url'] = default_url
+    st.session_state['token_input'] = default_token
+    st.session_state['db_conn_string'] = default_db_conn
     st.session_state['databases_config'] = databases_conf
     st.session_state['config_loaded'] = True
 
     try:
-        if "Database" not in loaded_source_type and loaded_url:
+        if "Database" not in default_source_type and default_url:
             headers = {"User-Agent": "Mozilla/5.0"}
-            if loaded_token:
-                headers["Authorization"] = loaded_token if loaded_token.startswith("Bearer ") else f"Bearer {loaded_token}"
+            if default_token:
+                headers["Authorization"] = default_token if default_token.startswith("Bearer ") else f"Bearer {default_token}"
             
-            response = httpx.get(loaded_url, timeout=20, verify=False, follow_redirects=True, headers=headers)
+            response = httpx.get(default_url, timeout=20, verify=False, follow_redirects=True, headers=headers)
             if response.status_code == 200:
                 try:
                     swagger_data = response.json()

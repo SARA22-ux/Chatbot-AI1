@@ -2,7 +2,7 @@
     "default_source_type": "Private API (with Token)",
     "api": {
         "source_url": "http://192.168.30.131:56/swagger/v1/swagger.json",
-        "token": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzdGFydHVwIiwianRpIjoiMGE1MmM5MzItNWUzNS00YzY0LWE0MDMtYTk3ODI3MzY3NzAzIiwiaXAiOiIxOTIuMTY4LjMwLjEzMSIsImV4cCI6MTc4OTk5Mzg0NywiaXNzIjoiQ29yZUlkZW50aXR5IiwiYXVkIjoiQ29yZUlkZW50aXR5VXNlciJ9.cc6bV51wbwhV74kJPqtlAhXq5ymJv6E_Be7KDIXbHFc"
+        "token": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzdGFydHVwIiwianRpIjoiZmNiMjAwOTItNGY0OS00NDM1LTk4MjMtNjBkNWQ4ZjE0NGMzIiwiaXAiOiIxOTIuMTY4LjMwLjEzMSIsImV4cCI6MTc4OTk5NDAxOCwiaXNzIjoiQ29yZUlkZW50aXR5IiwiYXVkIjoiQ29yZUlkZW50aXR5VXNlciJ9.5261cx06u-Gs7HGFEklCUipAygcMLx5jPfACfn1Uuk0"
     },
     "databases": {
         "Oracle Database": "Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=192.168.30.133)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SID=etech19c)));User Id=zagelabnewtest;Password=zagelabnewtest;",

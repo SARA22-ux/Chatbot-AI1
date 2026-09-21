@@ -89,10 +89,12 @@ if 'config_loaded' not in st.session_state:
     st.session_state['config_loaded'] = False
     databases_conf = {}
      
+    # القيم الافتراضية للعمل المحلي المباشر
     loaded_source_type = "Private API (with Token)"
     loaded_url = "http://192.168.30.131:56/swagger/v1/swagger.json"
     loaded_token = ""
 
+    # قراءة الإعدادات تلقائياً من ملف config.json إن وجد
     if os.path.exists(CONFIG_FILE_PATH):
         try:
             with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
@@ -114,14 +116,13 @@ if 'config_loaded' not in st.session_state:
 # --- الشريط الجانبي (Sidebar) لإعدادات الـ API (Public / Private) ---
 with st.sidebar:
     st.markdown("### ⚙️ إعدادات مصدر البيانات (API)")
-    
-    # اختيار نوع الـ API (عام أو خاص)
+     
     api_mode = st.radio(
         "نوع الـ API:",
         ["Public API (بدون توكن)", "Private API (مع توكن / مصادقة)"],
         index=0 if "Public" in st.session_state.get('source_type', '') else 1
     )
-    
+     
     source_url_input = st.text_input(
         "رابط الـ Swagger JSON أو نقطة النهاية:",
         value=st.session_state.get('source_url', 'http://192.168.30.131:56/swagger/v1/swagger.json')
@@ -144,8 +145,8 @@ with st.sidebar:
             headers = {"User-Agent": "Mozilla/5.0"}
             if "Private" in api_mode and token_input:
                 headers["Authorization"] = token_input if token_input.startswith("Bearer ") else f"Bearer {token_input}"
-            
-            response = httpx.get(source_url_input, timeout=20, verify=False, follow_redirects=True, headers=headers)
+             
+            response = httpx.get(source_url_input, timeout=10, verify=False, follow_redirects=True, headers=headers)
             if response.status_code == 200:
                 swagger_data = response.json()
                 endpoints_dict = {}
@@ -166,7 +167,7 @@ with st.sidebar:
             else:
                 st.error(f"فشل التحميل، رمز الاستجابة: {response.status_code}")
         except Exception as e:
-            st.error(f"خطأ في الاتصال: {str(e)}")
+            st.error(f"خطأ في الاتصال (تأكد من تشغيل السيرفر المحلي): {str(e)}")
 
     st.markdown("---")
     st.markdown("### 📁 مرفقات الملفات والصوتيات والصور")

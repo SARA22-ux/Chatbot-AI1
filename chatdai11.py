@@ -61,7 +61,7 @@ client = OpenAI(
     api_key=GOOGLE_API_KEY,
 )
 
-SELECTED_MODEL = "gemini-2.5-flash"
+SELECTED_MODEL = "gemini-3.5-flash-lite"
 
 def safe_chat_completion(client_obj, model_name, messages, temperature=0.3, max_retries=3):
     for attempt in range(max_retries):
